@@ -1,0 +1,15 @@
+{
+  "expo": {
+    "name": "AutoService",
+    "slug": "autoservice",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "autoservice",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "ios": { "supportsTablet": false, "bundleIdentifier": "com.autoservice.app", "infoPlist": { "NSLocationWhenInUseUsageDescription": "AutoService uses your location to find nearby mechanics and set the service address.", "NSPhotoLibraryUsageDescription": "Upload photos of your vehicle issue and documents.", "NSCameraUsageDescription": "Take photos of your vehicle issue and documents." } },
+    "android": { "package": "com.autoservice.app", "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION", "CAMERA"] },
+    "plugins": ["expo-router", "expo-secure-store", ["expo-image-picker", { "photosPermission": "Upload photos of your vehicle issue and documents." }], ["expo-location", { "locationWhenInUsePermission": "AutoService uses your location to find nearby mechanics and set the service address." }]],
+    "extra": { "apiUrl": "http://localhost:5000/api" }
+  }
+}
