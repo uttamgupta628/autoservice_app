@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { colors, fmtDate, fmtDateTime, fmtTime, money, pretty } from '../lib/theme';
 import { Avatar, Body, Card, Empty, Muted, Row, Stars, StatusBadge, Verified } from './ui';
+import { ClassPill } from './jobextras';
 
 export function Brand({ light, size = 30 }) {
   return (
@@ -114,6 +115,12 @@ export function JobCard({ job, role }) {
         </View>
         <StatusBadge status={job.status} label={label} />
       </Row>
+      {(job.diagnosis?.classification || job.parts?.source === 'customer') && (
+        <Row style={{ gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+          <ClassPill cls={job.diagnosis?.classification} urgent={job.diagnosis?.safety?.level === 'urgent'} />
+          {job.parts?.source && job.parts.source !== 'mechanic' && <Muted>Customer parts{job.parts.ready ? ' · ready' : ''}</Muted>}
+        </Row>
+      )}
       <Row style={{ marginTop: 10, justifyContent: 'space-between' }}>
         <Row style={{ gap: 6 }}><Ionicons name="calendar-outline" size={14} color={colors.muted} /><Muted>{fmtDateTime(job.scheduledAt)}</Muted></Row>
         {job.price > 0 && <Body style={{ fontWeight: '700' }}>{money(job.price)}</Body>}
@@ -165,11 +172,21 @@ export function LeadCard({ job }) {
   return (
     <Card onPress={() => router.push(`/job/${job._id}`)}>
       <Row style={{ justifyContent: 'space-between' }}>
-        <Body style={{ fontWeight: '700' }}>{pretty(job.category)}</Body>
+        <Body style={{ fontWeight: '700', flex: 1 }} numberOfLines={1}>{job.diagnosis?.serviceName || pretty(job.category)}</Body>
         {job.myQuote ? <Muted style={{ color: colors.green, fontWeight: '700' }}>Quoted {money(job.myQuote.total)}</Muted> : <Muted style={{ color: colors.blue, fontWeight: '700' }}>New</Muted>}
       </Row>
       <Muted style={{ marginTop: 2 }}>{job.vehicle ? `${job.vehicle.make} ${job.vehicle.model}` : ''} · {job.distanceKm} km away</Muted>
-      <Body numberOfLines={2} style={{ marginTop: 6 }}>{job.description}</Body>
+      {job.diagnosis?.symptomLabel ? (
+        <>
+          <Row style={{ gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+            <ClassPill cls={job.diagnosis.classification} urgent={job.diagnosis.safety?.level === 'urgent'} />
+            {job.parts?.source && job.parts.source !== 'mechanic' && <Muted>Customer supplies parts</Muted>}
+          </Row>
+          <Body numberOfLines={2} style={{ marginTop: 6 }}>{job.diagnosis.symptomLabel}{job.diagnosis.areaLabel ? ` · ${job.diagnosis.areaLabel}` : ''}</Body>
+        </>
+      ) : (
+        <Body numberOfLines={2} style={{ marginTop: 6 }}>{job.description}</Body>
+      )}
       <Row style={{ gap: 6, marginTop: 8 }}><Ionicons name="calendar-outline" size={14} color={colors.muted} /><Muted>{fmtDateTime(job.scheduledAt)}</Muted></Row>
     </Card>
   );

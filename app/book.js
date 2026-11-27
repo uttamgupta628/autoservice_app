@@ -4,6 +4,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen, TopBar, H2, Muted, Body, Card, Row, Field, Button, Check, Chip, Loading, ErrorText, useApi } from '../src/components/ui';
 import { DateTimeField, defaultWhen } from '../src/components/shared';
+import { PartsSection, defaultParts, partsProblem, toApiParts } from '../src/components/parts';
 import { api, errMsg, uploadAssets } from '../src/lib/api';
 import { DEFAULT_LOCATION, getCurrentLocation, pickImages } from '../src/lib/device';
 import { colors, money, pretty } from '../src/lib/theme';
@@ -13,6 +14,7 @@ export default function Book() {
   const instant = !!mechanicId;
   const vehicles = useApi(() => api.get('/vehicles').then((r) => r.data.vehicles));
   const cats = useApi(() => api.get('/categories').then((r) => r.data.categories));
+  const config = useApi(() => api.get('/diagnostics/config').then((r) => r.data));
   const mech = useApi(() => (mechanicId ? api.get(`/mechanics/${mechanicId}`).then((r) => r.data.mechanic) : Promise.resolve(null)), [mechanicId]);
 
   const [vehicleId, setVehicleId] = useState(null);
@@ -20,6 +22,7 @@ export default function Book() {
   const [category, setCategory] = useState('');
   const [description, setDescription] = useState('');
   const [photos, setPhotos] = useState([]);
+  const [parts, setParts] = useState(defaultParts());
   const [when, setWhen] = useState(defaultWhen());
   const [loc, setLoc] = useState({ ...DEFAULT_LOCATION, address: '' });
   const [locating, setLocating] = useState(false);
@@ -51,12 +54,15 @@ export default function Book() {
     if (instant && !selectedSlugs.length) return setError('Select at least one service');
     if (!instant && !category) return setError('Choose a service category');
     if (!instant && description.trim().length < 5) return setError('Describe the problem so mechanics can quote accurately');
+    const pp = partsProblem(parts);
+    if (pp) return setError(pp);
     setBusy(true);
     try {
       const media = !instant && photos.length ? await uploadAssets(photos, 'jobs') : [];
       const body = {
         vehicleId, scheduledAt: when.toISOString(), description, media,
         location: { address: loc.address.trim(), city: loc.city, lat: loc.lat, lng: loc.lng },
+        parts: await toApiParts(parts),
         ...(instant ? { mechanicId, services: selectedSlugs } : { category }),
       };
       const { data } = await api.post('/jobs', body);
@@ -99,6 +105,16 @@ export default function Book() {
             </>
           ) : (
             <>
+              <Card onPress={() => router.push('/diagnose')}>
+                <Row style={{ gap: 12 }}>
+                  <Ionicons name="medkit" size={26} color={colors.blue} />
+                  <View style={{ flex: 1 }}>
+                    <Body style={{ fontWeight: '800' }}>Not sure what is wrong?</Body>
+                    <Muted>Tap the problem area and answer a few questions. We create the repair job for you.</Muted>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color="#A0AEC0" />
+                </Row>
+              </Card>
               <H2>What does your vehicle need?</H2>
               {!cats.data?.length && <Muted style={{ marginBottom: 12 }}>No service categories found. Ask the admin to add some (or run the backend seed), then reopen this screen.</Muted>}
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
@@ -121,6 +137,8 @@ export default function Book() {
             </>
           )}
 
+          <PartsSection value={parts} onChange={setParts} supplierEnabled={!!config.data?.supplierIntegrationEnabled} hint="Only needed if you already have the parts." />
+
           <H2>Preferred date & time</H2>
           <DateTimeField value={when} onChange={setWhen} />
 
@@ -130,7 +148,14 @@ export default function Book() {
             <Text style={{ color: colors.blue, fontWeight: '600' }}>{locating ? 'Locating…' : 'Use my current location'}</Text>
           </Pressable>
 
-          {instant && <Row style={{ justifyContent: 'space-between', marginBottom: 12 }}><Body style={{ fontWeight: '700' }}>Total</Body><Body style={{ fontWeight: '800', fontSize: 18 }}>{money(total)}</Body></Row>}
+          {instant && (
+            <Card>
+              <Row style={{ justifyContent: 'space-between', marginBottom: 4 }}><Muted>Services</Muted><Body>{money(total)}</Body></Row>
+              <Row style={{ justifyContent: 'space-between', marginBottom: 4 }}><Muted>Booking fee ({Math.round((config.data?.ownerFeeRate ?? 0.05) * 100)}%)</Muted><Body>{money(Math.round(total * (config.data?.ownerFeeRate ?? 0.05) * 100) / 100)}</Body></Row>
+              {parts.source !== 'mechanic' && <Muted style={{ marginBottom: 4 }}>You supply the parts, so no parts are charged.</Muted>}
+              <Row style={{ justifyContent: 'space-between' }}><Body style={{ fontWeight: '700' }}>Total payable</Body><Body style={{ fontWeight: '800', fontSize: 18 }}>{money(total + Math.round(total * (config.data?.ownerFeeRate ?? 0.05) * 100) / 100)}</Body></Row>
+            </Card>
+          )}
           {!instant && <Muted style={{ marginBottom: 12 }}>Your request goes only to verified mechanics near you who offer this service, have the right equipment and are free at that time. They see an approximate area until you book.</Muted>}
           <ErrorText>{error}</ErrorText>
           <Button title={instant ? 'Confirm Booking' : 'Post Request'} onPress={submit} loading={busy} disabled={!vehicleId} />

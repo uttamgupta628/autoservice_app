@@ -8,6 +8,7 @@ import { api } from '../../src/lib/api';
 import { colors } from '../../src/lib/theme';
 
 const TILES = [
+  { icon: 'medkit-outline', label: 'Diagnose a Problem', go: '/diagnose' },
   { icon: 'calendar-outline', label: 'Book a Service', go: '/book' },
   { icon: 'car-outline', label: 'My Garage', go: '/vehicles' },
   { icon: 'people-outline', label: 'Find Mechanics', go: '/(owner)/find' },
@@ -47,8 +48,11 @@ export default function OwnerHome() {
 
       <View style={{ backgroundColor: colors.green, borderRadius: 16, padding: 18, marginBottom: 20 }}>
         <Text style={{ color: '#fff', fontSize: 18, fontWeight: '800' }}>Not sure what's wrong?</Text>
-        <Text style={{ color: '#E6FFF6', marginTop: 4, marginBottom: 12 }}>Describe the problem and compare quotes from trusted mechanics near you.</Text>
-        <Button title="Request a repair quote" variant="ghost" onPress={() => router.push('/book')} />
+        <Text style={{ color: '#E6FFF6', marginTop: 4, marginBottom: 12 }}>Tap the problem on your vehicle and answer a few questions. We work out the possible causes and create the repair job for mechanics near you.</Text>
+        <Button title="Diagnose the problem" variant="ghost" icon="medkit" onPress={() => router.push('/diagnose')} />
+        <Pressable onPress={() => router.push('/book')} style={{ alignItems: 'center', marginTop: 12 }}>
+          <Text style={{ color: '#fff', fontWeight: '700', textDecorationLine: 'underline' }}>Or request a repair quote directly</Text>
+        </Pressable>
       </View>
 
       <H2>Active bookings</H2>

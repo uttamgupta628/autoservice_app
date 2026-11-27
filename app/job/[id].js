@@ -8,6 +8,7 @@ import {
 import { useAuth } from '../../src/lib/auth';
 import { api, errMsg } from '../../src/lib/api';
 import { colors, fmtDate, fmtDateTime, money, pretty } from '../../src/lib/theme';
+import { DiagnosisCard, FlagClassification, PartsCard, SuggestionList } from '../../src/components/jobextras';
 
 export default function JobDetail() {
   const { id } = useLocalSearchParams();
@@ -16,7 +17,7 @@ export default function JobDetail() {
 
   if (loading && !data) return <Screen><TopBar title="Job" /><Loading /></Screen>;
   if (!data) return <Screen><TopBar title="Job" /><ErrorText>{error}</ErrorText></Screen>;
-  const { job, payment, review } = data;
+  const { job, payment, review, rates, fees, supplierEnabled } = data;
   const isOwner = user.role === 'owner';
 
   return (
@@ -24,7 +25,10 @@ export default function JobDetail() {
       <TopBar title={`Job J-${String(job._id).slice(-6).toUpperCase()}`} />
       <View style={{ padding: 16 }}>
         <Summary job={job} isOwner={isOwner} />
-        {isOwner ? <OwnerActions job={job} payment={payment} review={review} reload={reload} /> : <MechanicActions job={job} payment={payment} reload={reload} />}
+        <DiagnosisCard job={job} />
+        {isOwner ? <SuggestionList job={job} reload={reload} /> : <FlagClassification job={job} reload={reload} />}
+        <PartsCard job={job} isOwner={isOwner} reload={reload} supplierEnabled={supplierEnabled} />
+        {isOwner ? <OwnerActions job={job} payment={payment} review={review} rates={rates} fees={fees} reload={reload} /> : <MechanicActions job={job} payment={payment} rates={rates} reload={reload} />}
         <Timeline history={job.history} />
       </View>
     </Screen>
@@ -117,17 +121,27 @@ const useAction = (reload) => {
 };
 
 /* ---------------- owner ---------------- */
-function OwnerActions({ job, payment, review, reload }) {
+function OwnerActions({ job, payment, review, rates, fees, reload }) {
   const { busy, error, run } = useAction(reload);
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState('');
   const [issue, setIssue] = useState(null);
 
-  const accept = (q) =>
-    Alert.alert('Accept quote', `Book ${q.mechanic?.name} for ${money(q.total)}?`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Accept', onPress: () => run('accept' + q._id, () => api.post(`/jobs/${job._id}/quotes/${q._id}/accept`)) },
-    ]);
+  const ownerRate = rates?.owner ?? 0.05;
+  const bookingFee = (total) => Math.round(total * ownerRate * 100) / 100;
+  const customerParts = job.parts?.source && job.parts.source !== 'mechanic';
+  const accept = (q) => {
+    const fee = bookingFee(q.total);
+    const partsLine = customerParts ? `\n\nParts you will supply:\n${job.parts.items.map((i) => `• ${i.quantity} × ${i.name}${i.brand ? ' (' + i.brand + ')' : ''}`).join('\n')}\n\nBy continuing you confirm these parts are correct and will be ready for the visit.` : '';
+    Alert.alert(
+      customerParts ? 'Confirm parts and checkout' : 'Accept quote',
+      `Book ${q.mechanic?.name} for ${money(q.total)}.\nBooking fee (${Math.round(ownerRate * 100)}%): ${money(fee)}\nTotal payable: ${money(q.total + fee)}${partsLine}`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: customerParts ? 'Confirm & book' : 'Accept', onPress: () => run('accept' + q._id, () => api.post(`/jobs/${job._id}/quotes/${q._id}/accept`, { confirmParts: customerParts })) },
+      ]
+    );
+  };
   const cancel = () =>
     Alert.alert('Cancel this job?', 'The mechanic will be notified.', [
       { text: 'Keep', style: 'cancel' },
@@ -152,7 +166,7 @@ function OwnerActions({ job, payment, review, reload }) {
                 <Body style={{ fontWeight: '800', fontSize: 18 }}>{money(q.total)}</Body>
               </Row>
               <Divider />
-              <Line label="Labor" value={q.labor} /><Line label="Parts" value={q.parts} /><Line label="Travel" value={q.travel} /><Line label="Tax" value={q.tax} />
+              <Line label="Labor" value={q.labor} />{!customerParts && <Line label="Parts" value={q.parts} />}<Line label="Travel" value={q.travel} /><Line label="Tax" value={q.tax} /><Line label={`Booking fee (${Math.round(ownerRate * 100)}%)`} value={bookingFee(q.total)} /><Row style={{ justifyContent: 'space-between' }}><Body style={{ fontWeight: '800' }}>Total payable</Body><Body style={{ fontWeight: '800' }}>{money(q.total + bookingFee(q.total))}</Body></Row>
               {q.note ? <Muted style={{ marginTop: 6 }}>“{q.note}”</Muted> : null}
               {q.validUntil && <Muted style={{ marginTop: 4 }}>Valid until {fmtDateTime(q.validUntil)}{q.version > 1 ? ` · revised (v${q.version})` : ''}</Muted>}
               <Button title="Accept quote" variant="success" style={{ marginTop: 10 }} loading={busy === 'accept' + q._id} onPress={() => accept(q)} />
@@ -175,7 +189,8 @@ function OwnerActions({ job, payment, review, reload }) {
             {job.changeOrders?.filter((c) => c.status === 'approved').length > 0 && (
               <>{job.changeOrders.filter((c) => c.status === 'approved').map((c) => <Line key={c._id} label={`Extra: ${c.description}`} value={c.amount} />)}<Divider /></>
             )}
-            <Row style={{ justifyContent: 'space-between' }}><Body style={{ fontWeight: '800' }}>Total paid</Body><Body style={{ fontWeight: '800' }}>{money(payment?.amount ?? job.price)}</Body></Row>
+            {payment?.ownerFee > 0 && <><Line label="Job total" value={payment.amount} /><Line label="Booking fee" value={payment.ownerFee} /></>}
+            <Row style={{ justifyContent: 'space-between' }}><Body style={{ fontWeight: '800' }}>Total paid</Body><Body style={{ fontWeight: '800' }}>{money(payment?.totalCharged || (payment?.amount ?? job.price))}</Body></Row>
             <Muted style={{ marginTop: 4 }}>Payment: {payment?.status || 'recorded'}{payment?.status === 'refunded' ? ' (refunded)' : ''}</Muted>
           </Card>
 
@@ -238,13 +253,15 @@ function ChangeOrders({ job, owner, onRespond, busy }) {
 }
 
 /* ---------------- mechanic ---------------- */
-function MechanicActions({ job, payment, reload }) {
+function MechanicActions({ job, payment, rates, reload }) {
   const { busy, error, run } = useAction(reload);
   const assigned = !['requested', 'quoted'].includes(job.status);
   const mine = job.quotes?.[0];
   const [q, setQ] = useState({ labor: mine ? String(mine.labor) : '', parts: mine ? String(mine.parts) : '', travel: mine ? String(mine.travel) : '', note: mine?.note || '' });
   const [extra, setExtra] = useState({ description: '', amount: '' });
   const n = (v) => Number(v) || 0;
+  const noPartsCharge = ['customer', 'ship_to_customer'].includes(job.parts?.source);
+  const partsNotReady = ['customer', 'ship_to_customer', 'supplier_pickup'].includes(job.parts?.source) && !job.parts?.ready;
 
   if (!assigned) {
     const editable = !mine || mine.status === 'pending';
@@ -256,11 +273,11 @@ function MechanicActions({ job, payment, reload }) {
         {editable && (
           <Card>
             <Field label="Labor (₹) *" keyboardType="decimal-pad" value={q.labor} onChangeText={(t) => setQ({ ...q, labor: t })} />
-            <Field label="Parts (₹)" keyboardType="decimal-pad" value={q.parts} onChangeText={(t) => setQ({ ...q, parts: t })} />
+            {noPartsCharge ? <Muted style={{ marginBottom: 12 }}>The customer supplies the parts, so there is no parts charge in this quote.</Muted> : <Field label="Parts (₹)" keyboardType="decimal-pad" value={q.parts} onChangeText={(t) => setQ({ ...q, parts: t })} />}
             <Field label="Travel (₹)" keyboardType="decimal-pad" value={q.travel} onChangeText={(t) => setQ({ ...q, travel: t })} />
             <Field label="Note to customer" multiline placeholder="Warranty, parts brand, what's included…" value={q.note} onChangeText={(t) => setQ({ ...q, note: t })} />
             <Muted style={{ marginBottom: 10 }}>Subtotal {money(n(q.labor) + n(q.parts) + n(q.travel))}. Tax is added automatically when you send.</Muted>
-            <Button title={mine ? 'Update quote' : 'Accept job & send quote'} loading={busy === 'quote'} disabled={n(q.labor) <= 0} onPress={() => run('quote', () => api.post(`/jobs/${job._id}/quotes`, { labor: n(q.labor), parts: n(q.parts), travel: n(q.travel), note: q.note }))} />
+            <Button title={mine ? 'Update quote' : 'Accept job & send quote'} loading={busy === 'quote'} disabled={n(q.labor) <= 0} onPress={() => run('quote', () => api.post(`/jobs/${job._id}/quotes`, { labor: n(q.labor), parts: noPartsCharge ? 0 : n(q.parts), travel: n(q.travel), note: q.note }))} />
           </Card>
         )}
         {!mine && <Button title="Decline" variant="ghost" loading={busy === 'decline'} onPress={() => run('decline', () => api.post(`/jobs/${job._id}/decline`), () => router.back())} />}
@@ -277,7 +294,8 @@ function MechanicActions({ job, payment, reload }) {
 
       {job.status === 'booked' && (
         <>
-          <Button title="Check in & start job" icon="play" loading={busy === 'start'} onPress={() => run('start', () => api.post(`/jobs/${job._id}/status`, { status: 'in_progress' }))} />
+ {partsNotReady && <Muted style={{ marginBottom: 8 }}>You can start once the customer confirms the parts are ready.</Muted>}
+          <Button title="Check in & start job" icon="play" disabled={partsNotReady} loading={busy === 'start'} onPress={() => run('start', () => api.post(`/jobs/${job._id}/status`, { status: 'in_progress' }))} />
           <View style={{ height: 10 }} />
           <Button title="Cancel booking" variant="ghost" loading={busy === 'cancel'} onPress={() => Alert.alert('Cancel booking?', 'Cancellations affect your reliability score.', [{ text: 'Keep', style: 'cancel' }, { text: 'Cancel', style: 'destructive', onPress: () => run('cancel', () => api.post(`/jobs/${job._id}/cancel`, { reason: 'Cancelled by mechanic' })) }])} />
         </>
@@ -300,7 +318,7 @@ function MechanicActions({ job, payment, reload }) {
       {job.status === 'completed' && payment && (
         <Card>
           <H2>Earnings for this job</H2>
-          <Line label="Job total" value={payment.amount} /><Line label="Platform fee" value={-payment.platformFee} />
+          <Line label="Job total" value={payment.amount} /><Line label={`Job sourcing fee (${Math.round((rates?.mechanic ?? 0.1) * 100)}%)`} value={-(payment.mechanicFee ?? payment.platformFee)} />
           <Divider /><Row style={{ justifyContent: 'space-between' }}><Body style={{ fontWeight: '800' }}>Your payout</Body><Body style={{ fontWeight: '800', color: colors.green }}>{money(payment.payout)}</Body></Row>
           <Muted style={{ marginTop: 4 }}>Payout status: {payment.payoutStatus}</Muted>
         </Card>
